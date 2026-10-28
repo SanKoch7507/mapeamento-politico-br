@@ -1029,6 +1029,8 @@ def init_session_state():
         )
         st.session_state.answers = {}
         st.session_state.current_q_index = 0
+        st.session_state.started = False
+        st.session_state.autopercepcao_previa = None
         st.session_state.submitted = False
         st.session_state.initial_saved = False
         st.session_state.feedback_saved = False
@@ -1042,6 +1044,12 @@ def init_session_state():
 
     if "current_q_index" not in st.session_state:
         st.session_state.current_q_index = 0
+
+    if "started" not in st.session_state:
+        st.session_state.started = False
+
+    if "autopercepcao_previa" not in st.session_state:
+        st.session_state.autopercepcao_previa = None
 
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
@@ -1097,12 +1105,63 @@ def main():
     with st.expander("ℹ️ Metodologia, Privacidade e Instruções"):
         st.markdown(
             """
+            * **Autopercepção Prévia (*Ex-Ante*):** Antes de iniciar, registramos como você se enxerga politicamente hoje para contrapor, ao final, sua percepção inicial com o resultado empírico das suas respostas.
             * **Estrutura Unidimensional:** O questionário é composto por **21 questões** (7 por eixo) apresentadas **uma por vez**. Cada pergunta aborda **um único tema específico** para evitar ambiguidades.
             * **Isonomia Argumentativa:** Cada questão possui **5 alternativas** formuladas com rigor conceitual para refletir a fundamentação teórica real de cada espectro político, sem caricaturas.
             * **Embaralhamento Questão a Questão:** As alternativas são embaralhadas individualmente para cada pergunta e os pesos estão ocultos para evitar viés de posição.
             * **Coleta Anônima para Estatísticas:** As respostas e a validação do resultado são registradas de forma 100% anônima (sem nome, e-mail ou IP) para fins de estatística agregada.
             """
         )
+
+    # ==========================================================================
+    # ETAPA 0: AUTOPERCEPÇÃO PRÉVIA (ANTES DE INICIAR O QUESTIONÁRIO)
+    # ==========================================================================
+    if not st.session_state.started:
+        st.divider()
+        with st.container(border=True):
+            st.markdown(
+                '<span class="axis-badge">Etapa Preliminar • Autopercepção Política</span>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div class="question-title">'
+                "Antes de responder às 21 questões temáticas, como você costuma definir seu próprio posicionamento político atualmente?"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Esta resposta inicial servirá como linha de base para comparar sua autopercepção com o diagnóstico empírico calculado ao final do teste."
+            )
+
+            opcoes_autopercepcao = [
+                "Esquerda Radical",
+                "Centro-Esquerda",
+                "Centro",
+                "Centro-Direita",
+                "Direita Radical",
+                "Não sei definir / Prefiro não classificar previamente",
+            ]
+
+            escolha_inicial = st.radio(
+                label="Selecione sua autopercepção política prévia",
+                options=opcoes_autopercepcao,
+                index=None,
+                key="radio_autopercepcao_inicial",
+                label_visibility="collapsed",
+            )
+
+            st.write("")
+            if st.button(
+                "▶️ Iniciar Questionário (21 Questões)",
+                type="primary",
+                disabled=(escolha_inicial is None),
+                use_container_width=True,
+            ):
+                st.session_state.autopercepcao_previa = escolha_inicial
+                st.session_state.started = True
+                st.rerun()
+
+        return
 
     total_questions = len(st.session_state.shuffled_questions)
     answered_count = len(st.session_state.answers)
@@ -1273,7 +1332,11 @@ def main():
 
         profile = get_profile(final_average)
 
-        #Monta o registro base de dados
+        # Monta o registro base de dados (já incluindo a autopercepção prévia coletada antes do teste)
+        autopercepcao_declarada = (
+            st.session_state.autopercepcao_previa
+            or "Não sei definir / Prefiro não classificar previamente"
+        )
         base_record = {
             "session_id": st.session_state.session_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1282,6 +1345,7 @@ def main():
             "eixo_institucional": round(inst_avg, 2),
             "eixo_social": round(soc_avg, 2),
             "classificacao": profile["title"],
+            "autopercepcao_previa": autopercepcao_declarada,
         }
         for i in range(1, 22):
             base_record[f"q_{i:02d}"] = st.session_state.answers.get(i, "")
@@ -1300,7 +1364,7 @@ def main():
             f"""
             <div class="result-box" style="border-left-color: {profile['color']};">
                 <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8;">
-                    Classificação Espectral
+                    Classificação Espectral Obtida
                 </div>
                 <div style="font-size: 2rem; font-weight: 800; color: {profile['color']}; margin: 0.2rem 0;">
                     {profile['title']}
@@ -1312,6 +1376,31 @@ def main():
             """,
             unsafe_allow_html=True,
         )
+
+        # Quadro Comparativo: Autopercepção Prévia vs. Resultado Empírico
+        with st.container(border=True):
+            st.markdown("#### 🔍 Contraste: Autopercepção Inicial vs. Resultado Empírico")
+            comp_c1, comp_c2 = st.columns(2)
+            comp_c1.metric(
+                "Como você se declarou antes do teste",
+                autopercepcao_declarada,
+            )
+            comp_c2.metric(
+                "Posicionamento calculado pelas respostas",
+                f"{profile['title']} ({final_average:.2f})",
+            )
+            if autopercepcao_declarada == profile["title"]:
+                st.success(
+                    "🎯 **Convergência Plena:** O posicionamento calculado a partir das suas respostas nos 3 eixos coincidiu exatamente com a sua autopercepção política inicial."
+                )
+            elif "Não sei definir" in autopercepcao_declarada:
+                st.info(
+                    f"🧭 **Diagnóstico Definido:** Você optou por não se classificar previamente; suas respostas nos 3 eixos situaram seu perfil em **{profile['title']}**."
+                )
+            else:
+                st.warning(
+                    f"⚖️ **Deslocamento Identificado:** Antes do questionário você se declarou como **{autopercepcao_declarada}**, enquanto a média empírica das suas respostas nos 3 eixos situou seu perfil em **{profile['title']}**."
+                )
 
         # Métricas Geral e por Eixo
         m1, m2, m3, m4 = st.columns(4)
@@ -1336,7 +1425,7 @@ def main():
         # ======================================================================
         st.subheader("🗣️ Sua Percepção sobre o Resultado")
         st.caption(
-            "Ajude a aprimorar a calibração científica do instrumento informando se o diagnóstico correspondeu à sua expectativa."
+            f"Considerando que você se declarou inicialmente como **{autopercepcao_declarada}** e obteve o resultado **{profile['title']}**, avalie o diagnóstico abaixo:"
         )
 
         if st.session_state.feedback_saved:
@@ -1346,7 +1435,7 @@ def main():
         else:
             with st.form("user_feedback_form", border=True):
                 expectativa = st.radio(
-                    "1. Em relação ao que você imaginava antes do teste, este resultado:",
+                    "1. Diante da sua autopercepção inicial, este resultado:",
                     options=[
                         "🎯 Era exatamente o resultado que eu esperava",
                         "✨ Me surpreendeu positivamente",
@@ -1368,20 +1457,8 @@ def main():
                     index=None,
                 )
 
-                autopercepcao = st.selectbox(
-                    "3. Antes de responder ao questionário, como você costumava se definir politicamente?",
-                    options=[
-                        "Prefiro não informar / Não sabia definir",
-                        "Esquerda Radical",
-                        "Centro-Esquerda",
-                        "Centro",
-                        "Centro-Direita",
-                        "Direita Radical",
-                    ],
-                )
-
                 comentario = st.text_area(
-                    "4. Comentário opcional (alguma questão específica ou eixo que chamou sua atenção?):",
+                    "3. Comentário opcional (o que achou da comparação entre sua autopercepção e o resultado?):",
                     placeholder="Escreva aqui se desejar...",
                     max_chars=500,
                 )
@@ -1401,7 +1478,7 @@ def main():
                         full_record = dict(base_record)
                         full_record["expectativa_resultado"] = expectativa
                         full_record["concordancia_resultado"] = concordancia
-                        full_record["autopercepcao_previa"] = autopercepcao
+                        full_record["autopercepcao_previa"] = autopercepcao_declarada
                         full_record["comentario_opcional"] = comentario.strip()
 
                         ok, mode = save_submission_record(full_record)
