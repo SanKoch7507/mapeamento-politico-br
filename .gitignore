@@ -1,0 +1,10 @@
+# Ignorar credenciais e chaves secretas (NUNCA subir para o GitHub)
+.streamlit/secrets.toml
+
+# Ignorar backups locais de respostas e caches do Python
+respostas_coletadas.csv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
